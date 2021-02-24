@@ -12,9 +12,9 @@ class PiModem(object):
 		self.open()
 
 	def open(self):
-		self.ser = serial.Serial('/dev/ttyS0',115200, timeout=5)
-		self.SendCommand('AT\r'.encode())
-		self.SendCommand('AT+CMGF=1\r'.encode())
+		self.ser = serial.Serial('/dev/ttyS0',115200, timeout=5) 	# ttyS0 is Serial Interface of the Pi Zero
+		self.SendCommand('AT\r'.encode())							# Modem check
+		self.SendCommand('AT+CMGF=1\r'.encode()) 					# SMS in testmoe
 
 	def SendCommand(self, command, getLine=True):
 		self.ser.write(command)
@@ -38,11 +38,11 @@ class PiModem(object):
 		#print (len(data))
 		if len(data) > 4:
 			#print (data[2])
-			print (data[2].decode("ISO-8859-1"))
+			#print (data[2].decode("ISO-8859-1"))
 			try:
-				return UCS2.decode(str(ord(c) for c in data[2].decode("ISO-8859-1")))
+				return UCS2.decode(str(ord(c) for c in data[2].decode("ISO-8859-1"))) # try to decode UCS2
 			except:
-				return str(data[2].decode("ISO-8859-1"))
+				return str(data[2].decode("ISO-8859-1"))	# use plain text
 			#return UCS2.decode(data[2])
 
 	def close(self):
