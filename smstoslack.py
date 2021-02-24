@@ -1,0 +1,68 @@
+#!/usr/bin/python
+
+import serial
+import time
+import sys
+import requests
+from smspdu.codecs import UCS2
+
+class PiModem(object):
+
+	def __init__(self):
+		self.open()
+
+	def open(self):
+		self.ser = serial.Serial('/dev/ttyS0',115200, timeout=5)
+		self.SendCommand('AT\r'.encode())
+		self.SendCommand('AT+CMGF=1\r'.encode())
+
+	def SendCommand(self, command, getLine=True):
+		self.ser.write(command)
+		data = ''
+		if getLine:
+			data = self.ReadLine()
+		return data
+
+	def ReadLine(self):
+		data = self.ser.read().decode()
+		#print (data)
+		return data
+
+	def getAllUnreadSMS(self):
+		self.ser.flushInput()
+		self.ser.flushOutput()
+
+		command = 'AT+CMGL="REC UNREAD"\r\n'.encode()
+		self.SendCommand(command,getLine=False)
+		data = self.ser.readlines()
+		#print (len(data))
+		if len(data) > 4:
+			#print (data[2])
+			print (data[2].decode("ISO-8859-1"))
+			try:
+				return UCS2.decode(str(ord(c) for c in data[2].decode("ISO-8859-1")))
+			except:
+				return str(data[2].decode("ISO-8859-1"))
+			#return UCS2.decode(data[2])
+
+	def close(self):
+		self.ser.close()
+
+
+pm = PiModem()
+
+try:
+	file = open("smstoslack.config","r")
+	url = file.readline()
+	#print (url)
+	while True:
+		smsText = ""
+		smsText = pm.getAllUnreadSMS()
+		if smsText != None:
+			requests.post(url, json={"text": smsText})
+			#print (smsText)
+
+
+
+except KeyboardInterrupt:
+	pm.close()
