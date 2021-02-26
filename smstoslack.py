@@ -61,6 +61,7 @@ try:
 		if smsText != None:
 			requests.post(url, json={"text": smsText})
 			#print (smsText)
+		time.sleep(1)
 
 
 
