@@ -64,12 +64,13 @@ def send_to_slack(message: str, webhook: str):
 def main():
     with open('config.json', 'r') as config_file:
         config = json.load(config_file)
+        print(config)
         modems = []
         for modem in config['modems']:
             modems.append(Modem(modem['number'],
                                 modem['webhook'],
                                 modem['interface']))
-
+    return
     for modem in modems:
         modem.open(modem.interface)
         unread = modem.get_all_unread_sms()
