@@ -4,38 +4,44 @@ import serial
 import time
 import sys
 import requests
+import json
 from smspdu.codecs import UCS2
 
 
-class PiModem(object):
+class Modem(object):
 
-    def __init__(self):
-        self.open()
+    def __init__(self, number, webhook, interface):
+        self.number = number
+        self.webhook = webhook
+        self.interface = interface
 
     def open(self):
         # ttyS0 is Serial Interface of the Pi Zero
         self.ser = serial.Serial('/dev/ttyS0', 115200, timeout=5)
-        self.SendCommand('AT\r'.encode())							# Modem check
-        self.SendCommand('AT+CMGF=1\r'.encode()) 					# SMS in testmoe
+        self.send_command('AT\r'.encode())							# Modem check
+        self.send_command('AT+CMGF=1\r'.encode()) 					# SMS in testmoe
 
-    def SendCommand(self, command, getLine=True):
+    def check_number(self):
+        pass
+
+    def send_command(self, command, getLine=True):
         self.ser.write(command)
         data = ''
         if getLine:
-            data = self.ReadLine()
+            data = self.read_line()
         return data
 
-    def ReadLine(self):
+    def read_line(self):
         data = self.ser.read().decode()
         #print (data)
         return data
 
-    def getAllUnreadSMS(self):
+    def get_all_unread_sms(self):
         self.ser.flushInput()
         self.ser.flushOutput()
 
         command = 'AT+CMGL="REC UNREAD"\r\n'.encode()
-        self.SendCommand(command, getLine=False)
+        self.send_command(command, getLine=False)
         data = self.ser.readlines()
         #print (len(data))
         if len(data) > 4:
@@ -52,20 +58,39 @@ class PiModem(object):
         self.ser.close()
 
 
-pm = PiModem()
+def send_to_slack(text: str, webhook: str):
+    """
+    used to send text to certain slack webhook
+    :param text: content
+    :param webhook: address of slack webhook
+    """
+    requests.post(webhook, json={'text': text})
 
-try:
-    file = open("smstoslack.config", "r")
-    url = file.readline()
-    #print (url)
-    while True:
-        smsText = ""
-        smsText = pm.getAllUnreadSMS()
-        if smsText != None:
-            requests.post(url, json={"text": smsText})
-            #print (smsText)
-        time.sleep(1)
+def main():
+    with open('config.json', 'r') as config_file:
+        config = json.load(config_file)
+        modems = []
+        for modem in config['modems']:
+            modems.append(Modem(modem['number'],
+                                modem['webhook'],
+                                modem['interface']))
+
+    for modem in modems:
+        modem.open()
 
 
-except KeyboardInterrupt:
-    pm.close()
+
+    #try:
+    #    file = open('smstoslack.config', 'r')
+    #    url: str = file.readline()
+    #    while True:
+    #        text: str = modem.get_all_unread_sms()
+    #        if text != None:
+    #            send_to_slack(text, url)
+
+    #except KeyboardInterrupt:
+    #    modem.close()
+
+
+if __name__ == '__main__':
+    main()
