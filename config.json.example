@@ -1,1 +1,10 @@
-{}
+{
+    "modems": [
+        {
+            "name": "",
+            "interface": "",
+            "number": "",
+            "webhook": ""
+        }
+    ]
+}

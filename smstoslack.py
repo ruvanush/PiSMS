@@ -15,11 +15,10 @@ class Modem(object):
         self.webhook = webhook
         self.interface = interface
 
-    def open(self):
-        # ttyS0 is Serial Interface of the Pi Zero
-        self.ser = serial.Serial('/dev/ttyS0', 115200, timeout=5)
+    def open(self, interface: str):
+        self.ser = serial.Serial(interface, 115200, timeout=5)
         self.send_command('AT\r'.encode())							# Modem check
-        self.send_command('AT+CMGF=1\r'.encode()) 					# SMS in testmoe
+        self.send_command('AT+CMGF=1\r'.encode()) 					# SMS in test mode
 
     def check_number(self):
         pass
@@ -33,7 +32,6 @@ class Modem(object):
 
     def read_line(self):
         data = self.ser.read().decode()
-        #print (data)
         return data
 
     def get_all_unread_sms(self):
@@ -43,10 +41,7 @@ class Modem(object):
         command = 'AT+CMGL="REC UNREAD"\r\n'.encode()
         self.send_command(command, getLine=False)
         data = self.ser.readlines()
-        #print (len(data))
         if len(data) > 4:
-            #print (data[2])
-            #print (data[2].decode("ISO-8859-1"))
             try:
                 # try to decode UCS2
                 return UCS2.decode(str(ord(c) for c in data[2].decode("ISO-8859-1")))
@@ -58,13 +53,13 @@ class Modem(object):
         self.ser.close()
 
 
-def send_to_slack(text: str, webhook: str):
+def send_to_slack(message: str, webhook: str):
     """
-    used to send text to certain slack webhook
-    :param text: content
+    used to send a message to a certain slack webhook
+    :param message: content
     :param webhook: address of slack webhook
     """
-    requests.post(webhook, json={'text': text})
+    requests.post(webhook, json={'text': message})
 
 def main():
     with open('config.json', 'r') as config_file:
@@ -76,20 +71,11 @@ def main():
                                 modem['interface']))
 
     for modem in modems:
-        modem.open()
-
-
-
-    #try:
-    #    file = open('smstoslack.config', 'r')
-    #    url: str = file.readline()
-    #    while True:
-    #        text: str = modem.get_all_unread_sms()
-    #        if text != None:
-    #            send_to_slack(text, url)
-
-    #except KeyboardInterrupt:
-    #    modem.close()
+        modem.open(modem.interface)
+        unread = modem.get_all_unread_sms()
+        if unread:
+            send_to_slack(unread, modem.webhook)
+        modem.close()
 
 
 if __name__ == '__main__':
