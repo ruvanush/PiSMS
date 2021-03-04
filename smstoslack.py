@@ -13,9 +13,10 @@ class Modem(object):
     def __init__(self, number, webhook, interface):
         self.number = number
         self.webhook = webhook
+        self.interface = interface
 
-    def open(self, interface: str):
-        self.ser = serial.Serial(interface, 115200, timeout=5)
+    def open(self):
+        self.ser = serial.Serial(self.interface, 115200, timeout=5)
         self.send_command('AT\r'.encode())					# Modem check
         self.send_command('AT+CMGF=1\r'.encode()) 			# SMS in test mode
         self.ser.flush()
@@ -74,7 +75,7 @@ def main():
                                 modem['interface']))
 
     for modem in modems:
-        modem.open(modem.interface)
+        modem.open()
         msg_list = modem.get_all_unread_sms()
 
         for msg in msg_list:
