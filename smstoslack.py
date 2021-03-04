@@ -17,8 +17,9 @@ class Modem(object):
 
     def open(self, interface: str):
         self.ser = serial.Serial(interface, 115200, timeout=5)
-        self.send_command('AT\r'.encode())							# Modem check
-        self.send_command('AT+CMGF=1\r'.encode()) 					# SMS in test mode
+        self.send_command('AT\r'.encode())					# Modem check
+        self.send_command('AT+CMGF=1\r'.encode()) 			# SMS in test mode
+        self.ser.flush()
 
     def check_number(self):
         pass
@@ -40,14 +41,12 @@ class Modem(object):
 
         command = 'AT+CMGL="REC UNREAD"\r\n'.encode()
         self.send_command(command, getLine=False)
+        data = None
         data = self.ser.readlines()
-        if len(data) > 4:
-            try:
-                # try to decode UCS2
-                return UCS2.decode(str(ord(c) for c in data[2].decode("ISO-8859-1")))
-            except:
-                return str(data[2].decode("ISO-8859-1"))  # use plain text
-            # return UCS2.decode(data[2])
+
+        if(len(data) >= 5):
+            print(data)
+
 
     def close(self):
         self.ser.close()
@@ -64,19 +63,16 @@ def send_to_slack(message: str, webhook: str):
 def main():
     with open('config.json', 'r') as config_file:
         config = json.load(config_file)
-        print(config)
         modems = []
         for modem in config['modems']:
             modems.append(Modem(modem['number'],
                                 modem['webhook'],
                                 modem['interface']))
-    return
+
     for modem in modems:
         modem.open(modem.interface)
-        unread = modem.get_all_unread_sms()
-        if unread:
-            send_to_slack(unread, modem.webhook)
-        modem.close()
+
+        msg_list = modem.get_all_unread_sms()
 
 
 if __name__ == '__main__':

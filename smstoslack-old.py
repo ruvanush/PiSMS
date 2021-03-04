@@ -16,7 +16,8 @@ class PiModem(object):
         # ttyS0 is Serial Interface of the Pi Zero
         self.ser = serial.Serial('/dev/ttyS0', 115200, timeout=5)
         self.SendCommand('AT\r'.encode())							# Modem check
-        self.SendCommand('AT+CMGF=1\r'.encode()) 					# SMS in testmoe
+        self.SendCommand('AT+CMGF=1\r'.encode())                    # SMS in testmoe
+        self.ser.flush()
 
     def SendCommand(self, command, getLine=True):
         self.ser.write(command)
@@ -37,7 +38,7 @@ class PiModem(object):
         command = 'AT+CMGL="REC UNREAD"\r\n'.encode()
         self.SendCommand(command, getLine=False)
         data = self.ser.readlines()
-        #print (len(data))
+        print (data)
         if len(data) > 4:
             #print (data[2])
             #print (data[2].decode("ISO-8859-1"))
@@ -51,21 +52,22 @@ class PiModem(object):
     def close(self):
         self.ser.close()
 
+def main():
+    pm = PiModem()
 
-pm = PiModem()
-
-try:
-    file = open("smstoslack.config", "r")
-    url = file.readline()
-    #print (url)
-    while True:
-        smsText = ""
-        smsText = pm.getAllUnreadSMS()
-        if smsText != None:
-            requests.post(url, json={"text": smsText})
-            #print (smsText)
-        time.sleep(1)
+    try:
+        #print (url)
+        while True:
+            smsText = ""
+            smsText = pm.getAllUnreadSMS()
+            if smsText != None:
+                #requests.post(url, json={"text": smsText})
+                print (smsText)
+            time.sleep(1)
 
 
-except KeyboardInterrupt:
-    pm.close()
+    except KeyboardInterrupt:
+        pm.close()
+
+if __name__ == '__main__':
+    main()
