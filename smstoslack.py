@@ -13,7 +13,6 @@ class Modem(object):
     def __init__(self, number, webhook, interface):
         self.number = number
         self.webhook = webhook
-        self.interface = interface
 
     def open(self, interface: str):
         self.ser = serial.Serial(interface, 115200, timeout=5)
@@ -22,7 +21,10 @@ class Modem(object):
         self.ser.flush()
 
     def check_number(self):
-        pass
+        self.send_command('AT+CNUM\r'.encode())
+        data = self.ser.readlines()
+        print(data)
+        exit(0)
 
     def send_command(self, command, getLine=True):
         self.ser.write(command)
@@ -45,20 +47,22 @@ class Modem(object):
         data = self.ser.readlines()
 
         if(len(data) >= 5):
-            print(data)
-
+            data.pop(0)
+            data.pop(len(data) - 1)
+            data.pop(len(data) - 1)
+            return[data[x:x+3] for x in range(0, len(data),3)]
 
     def close(self):
         self.ser.close()
 
 
-def send_to_slack(message: str, webhook: str):
+def send_to_slack(sender, message: str, webhook: str):
     """
     used to send a message to a certain slack webhook
     :param message: content
     :param webhook: address of slack webhook
     """
-    requests.post(webhook, json={'text': message})
+    requests.post(webhook, json={'text': 'From: {} \n {}'.format(sender, message)})
 
 def main():
     with open('config.json', 'r') as config_file:
@@ -71,8 +75,15 @@ def main():
 
     for modem in modems:
         modem.open(modem.interface)
-
         msg_list = modem.get_all_unread_sms()
+
+        for msg in msg_list:
+            info = msg[0].decode().split(',')
+            number = info[2]
+            sms = msg[1].decode()
+            send_to_slack(number, sms, modem.webhook)
+
+
 
 
 if __name__ == '__main__':
