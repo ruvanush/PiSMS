@@ -1,10 +1,12 @@
 {
     "modems": [
-        {
-            "name": "",
-            "interface": "",
-            "number": "",
-            "webhook": ""
-        }
-    ]
+    "/dev/ttyUSB0", "/dev/ttyUSB2", "/dev/ttyUSB3", "/dev/ttyUSB4"
+  ],
+  "numbers": [
+    {
+      "name": "Example name ",
+      "number": "+49151XXXXXXX",
+      "webhook": "https://hooks.slack.com/XXXXXXXXXXXXXXXXXXXXXXXXX"
+    }
+  ]
 }
