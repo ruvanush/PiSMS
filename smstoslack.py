@@ -1,9 +1,9 @@
 #!/usr/bin/python
 import serial
-import time
-import sys
 import requests
 import json
+import logging
+import argparse
 from smspdu.codecs import UCS2
 
 
@@ -20,6 +20,7 @@ class Modem(object):
 
     def open(self):
         """opens a connection to the modem and tests it"""
+        logging.info('opening connection to {}'.format(self.interface))
         self.ser = serial.Serial(self.interface, 115200, timeout=5)
         self.send_command('AT\r'.encode())					# Modem check
         data = self.read_lines()
@@ -36,6 +37,7 @@ class Modem(object):
         connects to modem and redeems the Number of the simcard
         :return: the number of the simcard
         """
+        logging.info('getting number from {}'.format(self.interface))
         self.open()
         self.send_command('AT+CNUM\r'.encode())
         data = self.read_lines()
@@ -45,7 +47,9 @@ class Modem(object):
         # b'+CNUM: "My Number","+49151XXXXXXX",145,7,4\r\n',
         # b'\r\n', b'OK\r\n']
         # were getting the phone number out of that
-        return data[3].decode().split(',')[1].replace('"', '')
+        number = data[3].decode().split(',')[1].replace('"', '')
+        logging.info('number for {} is {}'.format(self.interface, number))
+        return number
 
     def get_webhook(self):
         """
@@ -53,6 +57,7 @@ class Modem(object):
         configured webhook if found
         :return: webhook matching to Number of the Modem
         """
+        logging.info('getting webhook for {}'.format(self.number))
         with open('config.json', 'r') as config_file:
             config = json.load(config_file)
             for number in config['numbers']:
@@ -65,6 +70,8 @@ class Modem(object):
         executes the command agains the Modem
         :param command: the command to execute
         """
+        logging.debug('sending command "{}" to {}'.format(command,
+                                                          self.interface))
         self.ser.write(command)
 
     def read_lines(self):
@@ -72,10 +79,12 @@ class Modem(object):
         gets the results that are currently available from the Modem
         :return: the fetchable output
         """
+        logging.debug('getting output from {}'.format(self.interface))
         return self.ser.readlines()
 
     def flush_output(self):
         """flushes the output stream of the modem"""
+        logging.debug('flushing {}'.format(self.interface))
         self.ser.flushOutput()
         self.ser.flushInput()
         self.ser.flush()
@@ -86,6 +95,8 @@ class Modem(object):
         fetches all sms saved on the simcard
         :return: all sms as an array
         """
+        logging.info('getting all sms from {} ({})'.format(self.number,
+                                                           self.interface))
         self.open()
 
         self.flush_output()
@@ -118,6 +129,9 @@ class Modem(object):
         :param sms_index: the sms to delete
         :return:
         """
+        logging.info('deleting sms_no. {} from {} ({})'.format(sms_index,
+                                                               self.number,
+                                                               self.interface))
         self.open()
         self.send_command('AT+CMGD={}\r'.format(sms_index).encode())
         self.close()
@@ -125,6 +139,7 @@ class Modem(object):
 
     def close(self):
         """closes an activ serial connection"""
+        logging.debug('closing connection to {}'.format(self.interface))
         self.ser.close()
 
     def send_to_slack(self, sender, message):
@@ -133,6 +148,9 @@ class Modem(object):
         :param sender: the sender of the message
         :param message: the contetnt of the message
         """
+        logging.info('sending sms from {} to configured slack chanel'.format(
+            sender
+        ))
         requests.post(self.webhook,
                       json={'text': 'From {}: \n {}'.format(sender, message)})
 
@@ -142,13 +160,41 @@ def decode_msg(msg):
     :param msg: the msg to decode
     :return: decodet msg
     """
+    logging.debug('decoding sms')
     try:
         return UCS2.decode(str(ord(c) for c in msg.decode("ISO-8859-1")))
     except:
         return str(msg.decode("ISO-8859-1"))  # use plain text
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='This is a script to receive sms and post them to any '
+                    'webhook api like the one in slack')
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--verbose', action='store_true')
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
+    format = '[%(asctime)s - %(levelname)s] : %(message)s'
+    datefmt = '%d-%b-%y %H:%M:%S'
+    filename = 'error.log'
+    level = logging.WARNING
+    if args.verbose:
+        level = logging.INFO
+    if args.debug:
+        filename = 'debug.log'
+        level = logging.DEBUG
+    if args.verbose:
+        logging.basicConfig(format=format, datefmt=datefmt, level=level)
+    else:
+        logging.basicConfig(filename=filename, format=format,
+                            datefmt=datefmt, level=level)
+
+    logging.info('fetching all available modems')
     with open('config.json', 'r') as config_file:
         config = json.load(config_file)
         modems = []
@@ -156,9 +202,9 @@ def main():
             try:
                 modems.append(Modem(interface))
             except Exception as exp:
-                print('failed: {}'.format(exp))
+                logging.warning('cannot create modem: {}'.format(exp))
 
-
+    logging.info('fetching all received sms')
     for modem in modems:
         try:
             msg_list = modem.get_all_sms()
@@ -183,10 +229,10 @@ def main():
                     #print('{}: {}'.format(sender_number, sms_msg))
                     modem.delete_sms(sms_index)
                 except Exception as exp:
-                    print('send Failed: {}'.format(exp))
+                    logging.warning('send Failed: {}'.format(exp))
 
         except Exception as exp:
-            print('fetching msg failed: {}'.format(exp))
+            logging.warning('fetching msg failed: {}'.format(exp))
 
 
 if __name__ == '__main__':
