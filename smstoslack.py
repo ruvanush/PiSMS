@@ -107,10 +107,13 @@ class Modem(object):
         self.close()
         if len(data) >= 5:
             # data should contain and answer like:
-            # [b'AT+CMGL="ALL"\r\r\n',
+            # [b’AT+CMGF=1\r\r\n’, b’OK\r\n’,
+            # b'AT+CMGL="ALL"\r\r\n',
             # b'+CMGL: 1,"REC UNREAD","+49172X","","21/03/05,14:20:52+04"\r\n',
             # b'Test msg\r\n', b'\r\n', b'OK\r\n']
             # remove command and ok return msg
+            data.pop(0)
+            data.pop(0)
             data.pop(0)
             data.pop(len(data) - 1)
             data.pop(len(data) - 1)
