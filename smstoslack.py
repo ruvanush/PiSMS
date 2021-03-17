@@ -5,6 +5,7 @@ import json
 import logging
 import argparse
 from smspdu.codecs import UCS2
+from multiprocessing import Pool
 
 
 class Modem(object):
@@ -106,10 +107,13 @@ class Modem(object):
         self.close()
         if len(data) >= 5:
             # data should contain and answer like:
-            # [b'AT+CMGL="ALL"\r\r\n',
+            # [b’AT+CMGF=1\r\r\n’, b’OK\r\n’,
+            # b'AT+CMGL="ALL"\r\r\n',
             # b'+CMGL: 1,"REC UNREAD","+49172X","","21/03/05,14:20:52+04"\r\n',
             # b'Test msg\r\n', b'\r\n', b'OK\r\n']
             # remove command and ok return msg
+            data.pop(0)
+            data.pop(0)
             data.pop(0)
             data.pop(len(data) - 1)
             data.pop(len(data) - 1)
@@ -167,6 +171,43 @@ def decode_msg(msg):
         return str(msg.decode("ISO-8859-1"))  # use plain text
 
 
+def create_modem(interface):
+    try:
+        return Modem(interface)
+    except Exception as exp:
+        logging.warning('cannot create modem: {}'.format(exp))
+
+
+def fatch_recived_data(modem):
+    try:
+        msg_list = modem.get_all_sms()
+
+        for msg in msg_list:
+            # msg should comtain
+            # [b'+CMGL: 2,"REC UNREAD","+49172XXXXXXX","",
+            # "21/03/05,14:29:39+04"\r\n', b'Testing \r\n']
+            # split them into info and msg section and convert info section
+            # to a decoded dict
+            info = msg[0].decode().split(',')
+            # info shozld now contain:
+            # ['+CMGL: 2', '"REC UNREAD"', '"+49172XXXXXXX"', '""',
+            # '"21/03/05', '14:29:39+04"\r\n']
+            # we extract the sms_index and the sender_number
+            sms_index = info[0].replace('+CMGL: ', '')
+            sender_number = info[2]
+            # decode sms as needed for plain text r shortcodes
+            sms_msg = decode_msg(msg[1])
+            try:
+                modem.send_to_slack(sender_number, sms_msg)
+                # print('{}: {}'.format(sender_number, sms_msg))
+                modem.delete_sms(sms_index)
+            except Exception as exp:
+                logging.warning('send Failed: {}'.format(exp))
+
+    except Exception as exp:
+        logging.warning('fetching msg failed: {}'.format(exp))
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='This is a script to receive sms and post them to any '
@@ -193,47 +234,17 @@ def main():
     else:
         logging.basicConfig(filename=filename, format=format,
                             datefmt=datefmt, level=level)
+    with Pool(processes=8) as pool:
 
-    logging.info('fetching all available modems')
-    with open('config.json', 'r') as config_file:
-        config = json.load(config_file)
-        modems = []
-        for interface in config['modems']:
-            try:
-                modems.append(Modem(interface))
-            except Exception as exp:
-                logging.warning('cannot create modem: {}'.format(exp))
+        logging.info('fetching all available modems')
+        with open('config.json', 'r') as config_file:
+            config = json.load(config_file)
 
-    logging.info('fetching all received sms')
-    for modem in modems:
-        try:
-            msg_list = modem.get_all_sms()
+            modems = [x for x in pool.map(create_modem, config['modems'])
+                      if x is not None]
 
-            for msg in msg_list:
-                # msg should comtain
-                # [b'+CMGL: 2,"REC UNREAD","+49172XXXXXXX","",
-                # "21/03/05,14:29:39+04"\r\n', b'Testing \r\n']
-                # split them into info and msg section and convert info section
-                # to a decoded dict
-                info = msg[0].decode().split(',')
-                # info shozld now contain:
-                # ['+CMGL: 2', '"REC UNREAD"', '"+49172XXXXXXX"', '""',
-                # '"21/03/05', '14:29:39+04"\r\n']
-                # we extract the sms_index and the sender_number
-                sms_index = info[0].replace('+CMGL: ', '')
-                sender_number = info[2]
-                # decode sms as needed for plain text r shortcodes
-                sms_msg = decode_msg(msg[1])
-                try:
-                    modem.send_to_slack(sender_number, sms_msg)
-                    #print('{}: {}'.format(sender_number, sms_msg))
-                    modem.delete_sms(sms_index)
-                except Exception as exp:
-                    logging.warning('send Failed: {}'.format(exp))
-
-        except Exception as exp:
-            logging.warning('fetching msg failed: {}'.format(exp))
-
+        logging.info('fetching all received sms')
+        pool.map(fatch_recived_data, modems)
 
 if __name__ == '__main__':
     main()
