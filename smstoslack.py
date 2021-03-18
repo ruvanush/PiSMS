@@ -27,9 +27,13 @@ class Modem(object):
         data = self.read_lines()
         # data should contain and answer like: [b'T\r\r\n', b'OK\r\n']
         # cheking if the answer contained 'OK' if not no compatible modem
-        if 'OK' not in data[1].decode():
-            self.close()
-            raise Exception('No Modem on {}'.format(self.interface))
+        try:
+            if 'OK' not in data[1].decode():
+                self.close()
+                raise Exception('No Modem available on {}'.format(
+                    self.interface))
+        except IndexError:
+            raise Exception('No Modem available on {}'.format(self.interface))
         self.send_command('AT+CMGF=1\r'.encode()) 			# SMS in test mode
         self.flush_output()
 
