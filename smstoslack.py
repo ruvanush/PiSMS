@@ -198,7 +198,7 @@ def fatch_recived_data(modem):
             # '"21/03/05', '14:29:39+04"\r\n']
             # we extract the sms_index and the sender_number
             sms_index = info[0].replace('+CMGL: ', '')
-            sender_number = info[2]
+            sender_number = info[2].replace('"','')
             # decode sms as needed for plain text r shortcodes
             sms_msg = decode_msg(msg[1])
             try:
