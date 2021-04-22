@@ -6,6 +6,7 @@ import logging
 import argparse
 from smspdu.codecs import UCS2
 from multiprocessing import Pool
+from binascii import unhexlify
 
 
 class Modem(object):
@@ -34,7 +35,7 @@ class Modem(object):
                     self.interface))
         except IndexError:
             raise Exception('No Modem available on {}'.format(self.interface))
-        self.send_command('AT+CMGF=1\r'.encode()) 			# SMS in test mode
+        self.send_command('AT+CMGF=1\r'.encode()) 			# SMS in text mode
         self.flush_output()
 
     def get_number(self):
@@ -94,7 +95,6 @@ class Modem(object):
         self.ser.flushInput()
         self.ser.flush()
 
-
     def get_all_sms(self):
         """
         fetches all sms saved on the simcard
@@ -109,6 +109,7 @@ class Modem(object):
         self.send_command(command)
         data = self.read_lines()
         self.close()
+        logging.debug('{} recived: {}'.format(self.interface, data))
         if len(data) >= 5:
             # data should contain and answer like:
             # [b’AT+CMGF=1\r\r\n’, b’OK\r\n’,
@@ -116,11 +117,24 @@ class Modem(object):
             # b'+CMGL: 1,"REC UNREAD","+49172X","","21/03/05,14:20:52+04"\r\n',
             # b'Test msg\r\n', b'\r\n', b'OK\r\n']
             # remove command and ok return msg
-            data.pop(0)
-            data.pop(0)
-            data.pop(0)
-            data.pop(len(data) - 1)
-            data.pop(len(data) - 1)
+            try:
+                data.remove(b'AT+CMGF=1\r\r\n')
+            except:
+                logging.debug('data reciver has no {} in it: skipping'.format(
+                    b'AT+CMGF=1\r\r\n'
+                ))
+            try:
+                data.remove(b'AT+CMGL="ALL"\r\r\n')
+            except:
+                logging.debug('data reciver has no {} in it: skipping'.format(
+                    b'AT+CMGL="ALL"\r\r\n'
+                ))
+            try:
+                data.remove(b'OK\r\n')
+            except:
+                logging.debug('data reciver has no {} in it: skipping'.format(
+                    b'OK\r\n'
+                ))
             # data should contain:
             # [b'+CMGL: 1,"REC UNREAD","+491725838021","",
             # "21/03/05,14:20:52+04"\r\n', b'Sorry for spamming\r\n']
@@ -168,11 +182,17 @@ def decode_msg(msg):
     :param msg: the msg to decode
     :return: decodet msg
     """
-    logging.debug('decoding sms')
+    logging.debug('trying to decode msg decoding sms')
     try:
-        return UCS2.decode(str(ord(c) for c in msg.decode("ISO-8859-1")))
+        unhexlify(msg).decode('ISO-8859-1')
     except:
-        return str(msg.decode("ISO-8859-1"))  # use plain text
+        logging.debug('could not decode as hex')
+    try:
+        msg = UCS2.decode(str(ord(c) for c in msg.decode('ISO-8859-1')))
+    except:
+        logging.debug('could not decode as UCS2')
+
+    return str(msg.decode('ISO-8859-1'))  # use plain text
 
 
 def create_modem(interface):
@@ -210,6 +230,7 @@ def fatch_recived_data(modem):
 
     except Exception as exp:
         logging.warning('fetching msg failed: {}'.format(exp))
+        raise exp
 
 
 def parse_args():
@@ -226,18 +247,21 @@ def main():
 
     format = '[%(asctime)s - %(levelname)s] : %(message)s'
     datefmt = '%d-%b-%y %H:%M:%S'
-    filename = 'error.log'
+    handlers = [
+        logging.FileHandler('error.log')
+    ]
     level = logging.WARNING
-    if args.verbose:
-        level = logging.INFO
     if args.debug:
         filename = 'debug.log'
         level = logging.DEBUG
+        handlers = [
+            logging.FileHandler('debug.log')
+        ]
     if args.verbose:
-        logging.basicConfig(format=format, datefmt=datefmt, level=level)
-    else:
-        logging.basicConfig(filename=filename, format=format,
-                            datefmt=datefmt, level=level)
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(format=format, datefmt=datefmt, level=level,
+                        handlers=handlers)
+
     with Pool(processes=8) as pool:
 
         logging.info('fetching all available modems')
