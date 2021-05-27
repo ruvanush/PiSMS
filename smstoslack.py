@@ -19,12 +19,13 @@ class Modem(object):
         self.interface = interface
         self.number = self.get_number()
         self.webhook = self.get_webhook()
+        self.jenkins_credentials = self.get_jenkins_credentials()
 
     def open(self):
         """opens a connection to the modem and tests it"""
         logging.info('opening connection to {}'.format(self.interface))
         self.ser = serial.Serial(self.interface, 115200, timeout=5)
-        self.send_command('AT\r'.encode())					# Modem check
+        self.send_command('AT\r'.encode())  # Modem check
         data = self.read_lines()
         # data should contain and answer like: [b'T\r\r\n', b'OK\r\n']
         # cheking if the answer contained 'OK' if not no compatible modem
@@ -35,7 +36,7 @@ class Modem(object):
                     self.interface))
         except IndexError:
             raise Exception('No Modem available on {}'.format(self.interface))
-        self.send_command('AT+CMGF=1\r'.encode()) 			# SMS in text mode
+        self.send_command('AT+CMGF=1\r'.encode())  # SMS in text mode
         self.flush_output()
 
     def get_number(self):
@@ -141,7 +142,7 @@ class Modem(object):
             # if multiple msg are recived they are split by "b'\r\n'"
             # therefore every three entries are one msg
             # so split data accordingly
-            value = [data[x:x+3] for x in range(0, len(data),3)]
+            value = [data[x:x + 3] for x in range(0, len(data), 3)]
             return value
         return []
 
@@ -157,7 +158,6 @@ class Modem(object):
         self.open()
         self.send_command('AT+CMGD={}\r'.format(sms_index).encode())
         self.close()
-
 
     def close(self):
         """closes an activ serial connection"""
@@ -175,6 +175,41 @@ class Modem(object):
         ))
         requests.post(self.webhook,
                       json={'text': 'From {}: \n {}'.format(sender, message)})
+
+    def get_jenkins_credentials(self):
+        """
+        cheks the number of the Modem against the Config and returns the
+        configured jenkins if found
+        :return: webhook matching to Number of the Modem
+        """
+        logging.info('getting jenkins config for {}'.format(self.number))
+        with open('config.json', 'r') as config_file:
+            config = json.load(config_file)
+            for number in config['numbers']:
+                if number['number'] == self.number:
+                    return number.get('jenkins')
+            raise Exception('no jenkins config found for {}'.format(
+                self.number))
+
+    def send_to_jenkins(self, sender, message):
+        if not self.jenkins_credentials:
+            return
+
+        logging.info('sending sms from {} to jenkins'.format(
+            sender
+        ))
+        sms = f'{sender} {message}'
+
+        jenkins_url = self.jenkins_credentials['jenkins_url']
+        jenkins_user = self.jenkins_credentials['jenkins_user']
+        jenkins_pass = self.jenkins_credentials['jenkins_pass']
+        jenkins_job = self.jenkins_credentials['jenkins_job']
+        jenkins_token = self.jenkins_credentials['jenkins_token']
+
+        requests.get(
+            f'https://{jenkins_user}:{jenkins_pass}@{jenkins_url}'
+            f'{jenkins_job}?token={jenkins_token}&sms={sms}')
+
 
 def decode_msg(msg):
     """
@@ -218,12 +253,13 @@ def fatch_recived_data(modem):
             # '"21/03/05', '14:29:39+04"\r\n']
             # we extract the sms_index and the sender_number
             sms_index = info[0].replace('+CMGL: ', '')
-            sender_number = info[2].replace('"','')
+            sender_number = info[2].replace('"', '')
             # decode sms as needed for plain text r shortcodes
             sms_msg = decode_msg(msg[1])
             try:
                 modem.send_to_slack(sender_number, sms_msg)
                 # print('{}: {}'.format(sender_number, sms_msg))
+                modem.send_to_jenkins(sender_number, sms_msg)
                 modem.delete_sms(sms_index)
             except Exception as exp:
                 logging.warning('send Failed: {}'.format(exp))
@@ -273,6 +309,7 @@ def main():
 
         logging.info('fetching all received sms')
         pool.map(fatch_recived_data, modems)
+
 
 if __name__ == '__main__':
     main()
