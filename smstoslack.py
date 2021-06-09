@@ -217,17 +217,19 @@ def decode_msg(msg):
     :param msg: the msg to decode
     :return: decodet msg
     """
+    print(msg)
     logging.debug('trying to decode msg decoding sms')
     try:
-        unhexlify(msg).decode('ISO-8859-1')
-    except:
-        logging.debug('could not decode as hex')
-    try:
-        msg = UCS2.decode(str(ord(c) for c in msg.decode('ISO-8859-1')))
-    except:
-        logging.debug('could not decode as UCS2')
+        msg = UCS2.decode(str(ord(c) for c in msg))
+    except Exception as e:
+        logging.warning('could not decode as UCS2')
 
-    return str(msg.decode('ISO-8859-1'))  # use plain text
+    try:
+        unhexlify(msg)
+    except Exception as e:
+        logging.warning('could not decode as hex')
+
+    return msg.decode('ISO-8859-1')
 
 
 def create_modem(interface):
