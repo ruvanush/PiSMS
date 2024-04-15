@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import re
 import serial
 import requests
 import json
@@ -236,7 +237,7 @@ def create_modem(interface):
     try:
         return Modem(interface)
     except Exception as exp:
-        logging.warning('cannot create modem: {}'.format(exp))
+        logging.warning('cannot create modem: {} for {}'.format(exp, interface))
 
 
 def fatch_recived_data(modem):
@@ -250,6 +251,9 @@ def fatch_recived_data(modem):
             # split them into info and msg section and convert info section
             # to a decoded dict
             info = msg[0].decode().split(',')
+            # If the info list has only one element then continue
+            if len(info) == 1:
+                continue
             # info shozld now contain:
             # ['+CMGL: 2', '"REC UNREAD"', '"+49172XXXXXXX"', '""',
             # '"21/03/05', '14:29:39+04"\r\n']
@@ -257,7 +261,20 @@ def fatch_recived_data(modem):
             sms_index = info[0].replace('+CMGL: ', '')
             sender_number = info[2].replace('"', '')
             # decode sms as needed for plain text r shortcodes
-            sms_msg = decode_msg(msg[1])
+            sms_msg = decode_msg(msg[1]).strip()
+
+            # Stop on empty message
+            if sms_msg == '':
+                continue
+            # Try to decode messages that are sent with weird encoding like:
+            # '004400650069006E0020004100700070006C0....'
+            try:
+                hex_msg = ''.join([
+                    chr(int(i, 16)) for i in re.findall('..', re.sub('00([0-9a-fA-F]{2})', r'\1', str(sms_msg)))
+                ]).replace('\x00', '')
+                sms_msg += ' :: ' + hex_msg
+            except Exception as e:
+                pass
             try:
                 modem.send_to_slack(sender_number, sms_msg)
                 # print('{}: {}'.format(sender_number, sms_msg))
